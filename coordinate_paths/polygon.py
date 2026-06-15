@@ -1,6 +1,6 @@
 from coordinate_paths import base
+from coordinate_paths.base import PrimaryAxis, _inclusive_walk, _serpentine_raster
 import decimal
-import numpy as np
 
 
 class PolygonPath(base.Path):
@@ -8,25 +8,23 @@ class PolygonPath(base.Path):
 	Generates a raster scanning path within a polygonal area.
 
 	The path scans the bounding box of the polygon in a snake-like pattern,
-	including only points that fall inside the polygon boundary.
+	keeping only points that fall inside the polygon boundary.
 	"""
 
 	def __init__(
 		self,
 		vertices: list[tuple[decimal.Decimal, decimal.Decimal]],
 		step_size: decimal.Decimal,
-		start_at_index: int = 1
+		start_at_index: int = 1,
+		primary_axis: PrimaryAxis = PrimaryAxis.Y,
 	):
 		"""
-		Initialize polygon path.
-
-		:param vertices: List of (x, y) vertices defining the polygon boundary
-		:type vertices: list[tuple[decimal.Decimal, decimal.Decimal]]
-		:param step_size: Distance between scan points in mm
-		:type step_size: decimal.Decimal
-		:param start_at_index: Index to start scanning from (1-indexed)
-		:type start_at_index: int
-		:raises ValueError: If fewer than 3 vertices are provided
+		:param vertices: List of (x, y) vertices defining the polygon boundary.
+		:param step_size: Distance between scan points (must be > 0).
+		:param start_at_index: 1-indexed offset to start from (drops earlier points).
+		:param primary_axis: ``PrimaryAxis.X`` row-major, ``PrimaryAxis.Y``
+		                     column-major (default).
+		:raises ValueError: If fewer than 3 vertices are provided.
 		"""
 		if len(vertices) < 3:
 			raise ValueError("Polygon must have at least 3 vertices")
@@ -34,20 +32,11 @@ class PolygonPath(base.Path):
 		self.__vertices = vertices
 		self.__step_size = step_size
 		self.__start_at_index = start_at_index
-		super(PolygonPath, self).__init__('Polygon Path')
+		super().__init__('Polygon Path', primary_axis=primary_axis)
 		self.__coordinates = None
 
 	def __point_in_polygon(self, x: float, y: float) -> bool:
-		"""
-		Check if a point is inside the polygon using ray casting algorithm.
-
-		:param x: X coordinate of point
-		:type x: float
-		:param y: Y coordinate of point
-		:type y: float
-		:return: True if point is inside polygon, False otherwise
-		:rtype: bool
-		"""
+		"""Ray-casting point-in-polygon test."""
 		n = len(self.__vertices)
 		inside = False
 
@@ -68,64 +57,38 @@ class PolygonPath(base.Path):
 
 	@property
 	def coordinates(self) -> list[tuple[decimal.Decimal, decimal.Decimal]]:
-		"""
-		Generate raster scan coordinates within polygon boundary.
-
-		:return: List of (x, y) coordinate tuples
-		:rtype: list[tuple[decimal.Decimal, decimal.Decimal]]
-		"""
 		if self.__coordinates is None:
-			coordinates = []
+			# Bounding box (in float for inside-test consistency).
+			x_floats = [float(v[0]) for v in self.__vertices]
+			y_floats = [float(v[1]) for v in self.__vertices]
+			min_x, max_x = min(x_floats), max(x_floats)
+			min_y, max_y = min(y_floats), max(y_floats)
+			step = float(self.__step_size)
 
-			# Find bounding box of polygon
-			x_coords = [float(v[0]) for v in self.__vertices]
-			y_coords = [float(v[1]) for v in self.__vertices]
+			xs = _inclusive_walk(min_x, max_x, step)
+			ys = _inclusive_walk(min_y, max_y, step)
 
-			min_x = min(x_coords)
-			max_x = max(x_coords)
-			min_y = min(y_coords)
-			max_y = max(y_coords)
-
-			# Generate raster scan pattern
-			x_range = np.arange(min_x, max_x + float(self.__step_size), float(self.__step_size))
-			y_range = np.arange(min_y, max_y + float(self.__step_size), float(self.__step_size))
-
-			# Snake-like pattern
-			y_forward = True
-			for x in x_range:
-				y_list = y_range if y_forward else y_range[::-1]
-				for y in y_list:
-					# Only include points inside the polygon
-					if self.__point_in_polygon(x, y):
-						coordinates.append((
-							decimal.Decimal(str(round(x, 4))),
-							decimal.Decimal(str(round(y, 4)))
-						))
-				y_forward = not y_forward
-
-			# Apply start_at_index offset
-			self.__coordinates = coordinates[self.__start_at_index - 1:]
-
+			raster = _serpentine_raster(xs, ys, self._primary_axis)
+			coords = [
+				(decimal.Decimal(str(round(x, 4))),
+				 decimal.Decimal(str(round(y, 4))))
+				for x, y in raster
+				if self.__point_in_polygon(x, y)
+			]
+			self.__coordinates = coords[self.__start_at_index - 1:]
 		return self.__coordinates
 
 
 if __name__ == "__main__":
-	# Test the polygon path with a triangle
-	import decimal
-
 	path = PolygonPath(
 		vertices=[
 			(decimal.Decimal('0'), decimal.Decimal('0')),
 			(decimal.Decimal('10'), decimal.Decimal('0')),
-			(decimal.Decimal('5'), decimal.Decimal('8.66'))  # Equilateral triangle
+			(decimal.Decimal('5'), decimal.Decimal('8.66')),
 		],
-		step_size=decimal.Decimal('0.5')
+		step_size=decimal.Decimal('0.5'),
 	)
-
 	print(f"Total points: {len(path.coordinates)}")
-	print(f"First 10 points:")
 	for i, coord in enumerate(path.coordinates[:10]):
 		print(f"  {i+1}: ({coord[0]}, {coord[1]})")
-
-	# Visualize the path
 	path.plot()
