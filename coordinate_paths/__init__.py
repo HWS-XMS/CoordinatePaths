@@ -9,5 +9,5 @@ from coordinate_paths.rectangular import RectangularPath
 from coordinate_paths.circular import CircularPath
 from coordinate_paths.polygon import PolygonPath
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __all__ = ["Path", "PrimaryAxis", "RectangularPath", "CircularPath", "PolygonPath"]

@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="coordinate-paths",
-    version="1.0.0",
+    version="1.1.0",
     author="Marvin Sass",
     description="Coordinate path generation for automated scanning systems",
     long_description=long_description,
